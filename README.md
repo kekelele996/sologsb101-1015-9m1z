@@ -42,7 +42,7 @@ docker compose up -d --build       # 改完代码后重新构建
 | 构建 | Vite 6 | 开发端口与宿主端口一致（22815） |
 | 路由 | Vue Router 4 | `createWebHistory` + 路由懒加载 |
 | 状态管理 | Pinia 2 | setup store，跨页状态集中在 store，页面只读 store |
-| 本地持久化 | Dexie 4（IndexedDB） | 库名 `gbheritagetree`，含 v1 → v2 升级迁移 |
+| 本地持久化 | Dexie 4（IndexedDB） | 库名 `gbheritagetree`，含 v1 → v2 → v3 升级迁移（v3 班组 / 技术组两侧分账） |
 | 容器 | node:20-alpine → nginx:alpine | 多阶段构建，`chmod -R a+rX` 规避静态资源 403 |
 
 ---
@@ -64,18 +64,19 @@ sologsb101-1015/
     ├── vite.config.ts
     ├── index.html
     ├── public/favicon.svg
+    ├── scripts/                 # 两侧分账运行时自检（verify-ledger.ts / verify-upgrade.ts）
     └── src/
         ├── main.ts             # 入口：Pinia + Router + Element Plus + 初始化数据库
-        ├── App.vue             # 外壳：顶部导航 + 当前古树上下文 + 页脚
+        ├── App.vue             # 外壳：顶部导航（含对账角标）+ 当前古树上下文 + 页脚
         ├── env.d.ts
         ├── styles/main.css
-        ├── types/              # tree.ts survey.ts measure.ts support.ts review.ts
-        ├── stores/             # treeStore.ts measureStore.ts reviewStore.ts
+        ├── types/              # tree.ts survey.ts measure.ts support.ts review.ts ledger.ts
+        ├── stores/             # treeStore surveyStore measureStore supportStore reviewStore reconcileStore
         ├── components/common/  # VigorTag.vue FilterBar.vue StatBadge.vue EmptyPanel.vue
         ├── hooks/              # useTreeHistory.ts useIdbTable.ts
-        ├── pages/              # 5 个模块页面
-        ├── router/index.ts     # 路由表 + ROUTES 常量
-        └── utils/              # dimension.ts db.ts export.ts seed.ts id.ts
+        ├── pages/              # TreeList TreeSurvey MeasureBoard SupportBoard ReviewView ReconcileView
+        ├── router/index.ts     # 路由表 + ROUTES 常量（含 /reconcile）
+        └── utils/              # dimension.ts db.ts sync.ts export.ts seed.ts id.ts
 ```
 
 ---
@@ -85,10 +86,11 @@ sologsb101-1015/
 | 路由 | 页面文件 | 功能 |
 | --- | --- | --- |
 | `/trees` | `pages/TreeList.vue` | 古树一树一档：新建/编辑/级联删除、按保护级别与树种筛选、回显检查次数与最新长势等级 |
-| `/trees/:id/surveys` | `pages/TreeSurvey.vue` | 树体与立地检查：录树高/胸径/冠幅/倾斜/空洞并对比上次、年化生长量、古树历史时间线 |
-| `/measures` | `pages/MeasureBoard.vue` | 复壮措施台账：按类型与实施状态筛选、行内草稿、批量改状态，完成即回写最近复壮日期 |
-| `/supports` | `pages/SupportBoard.vue` | 支撑加固与避雷件登记：超周期未检查自动高亮 + 顶部提醒 + 一键登记本次检查 |
-| `/reviews` | `pages/ReviewView.vue` | 长势复评与结构版本：衰弱/濒危强制填写后续措施、历史时间线、JSON 导入导出 |
+| `/trees/:id/surveys` | `pages/TreeSurvey.vue` | **班组侧**树体与立地检查：录树高/胸径/冠幅/倾斜/空洞并对比上次、年化生长量、时间线、同步状态 |
+| `/measures` | `pages/MeasureBoard.vue` | **班组侧**复壮措施台账：筛选、行内草稿、批量改状态，完成即回写最近复壮日期、同步技术组 |
+| `/supports` | `pages/SupportBoard.vue` | 加固件两侧分账：班组登记现场检查日期、技术组核定检查周期、同步/重试/重新对账、超期高亮 |
+| `/reviews` | `pages/ReviewView.vue` | **技术组侧**长势复评：衰弱/濒危强制后续措施、历史时间线、JSON 导入导出（定级不被班组改写） |
+| `/reconcile` | `pages/ReconcileView.vue` | 两侧台账对账页：对不上的记录写清编号/字段/两侧取值，待人裁定后按所选侧结案 |
 
 `/` 重定向到 `/trees`，未匹配路径统一回落到 `/trees`。
 **层级路由支持直接深链**：把 `http://localhost:22815/trees/tree-guozijian-0007/surveys` 直接粘贴到地址栏即可打开；
@@ -100,21 +102,37 @@ sologsb101-1015/
 
 * **持久化方案**：IndexedDB，通过 Dexie 封装（`src/utils/db.ts`）。
 * **数据库名**：`gbheritagetree`。
-* **数据结构版本**：`DB_SCHEMA_VERSION = 2`，`version(1)` 建立全部表，`version(2)` 补齐索引并执行 `.upgrade()` 迁移：
-  * `surveys` 增加 `[treeId+date]` 复合索引、`measures` 增加 `operator` 索引、`supports` 增加 `lastCheckDate` 索引、`reviews` 增加 `trend` 索引；
-  * 回填 `revision` / `createdAt` / `updatedAt`；
-  * 为 `trees` 补齐 `lastMeasureDate`（最近复壮日期）回写字段；
-  * 为 `reviews` 补齐 `followUp`（后续措施）字段；
-  * 为 `supports` 补齐 `lastCheckDate` 与 `checkCycleMon` 缺省值。
-* **表结构**：
+* **数据结构版本**：`DB_SCHEMA_VERSION = 3`。`version(1)` 建表；`version(2)` 补索引与回写字段；
+  `version(3)` 实施「**两侧分账**」并执行 `.upgrade()` 迁移：
+  * **先迁移、再启用**：打开旧库时先把全部历史记录分到两侧、回填 `owner` 与两侧时间戳 / 同步状态，
+    最后才在 `meta` 表写入 `ledgerSplitEnabled=true`；迁移完成前页面不会读到未分账数据（`db.open()` 等 upgrade 结束才 resolve）。
+  * **归属划分**：树体检查、复壮措施、加固件现场检查日期 → 班组（`owner=crew`）；
+    加固件检查周期、长势复评定级 → 技术组（复评 `owner=tech`）。
+  * 加固件历史 `lastCheckDate` 原样复制到技术组侧 `techCheckDate`，两侧初始一致、不凭空产生差异；
+    旧复评回填 `techUpdatedAt`；新增 `discrepancies`（对账差异）与 `meta`（键值标记）两张表。
+* **两侧分账规则（v3 核心）**：
+  * **字段级归属、互不整行覆盖**：班组写检查 / 措施 / `lastCheckDate`（`putCrewSurvey`、`putCrewMeasure`、
+    `markCrewSupportChecked`）；技术组写 `checkCycleMon`（`setTechSupportCycle`）与复评定级（`putTechReview`）。
+    班组新做的检查不改写技术组已定的周期 / 定级；技术组调整周期也不删班组已登记的现场记录。
+  * **班组 → 技术组单向同步**（`src/utils/sync.ts`）：班组新登记的现场记录置 `pending` 推送；
+    技术组确认后写 `techAckAt` / `techCheckDate`。**技术组定过的不回退**。
+  * **同步失败按本侧重试**：可在加固件页打开「模拟离线」制造失败；失败记录保留班组值与原因（`failed`），
+    在线后「同步到技术组」或单条「重试」即收敛，技术组侧在离线期间不被改动。
+  * **对账不上摆档案页**：人工「重新对账」时，凡班组 `lastCheckDate` ≠ 技术组 `techCheckDate` 的加固件，
+    写一条 `discrepancies`（含古树编号、记录 id、字段、两侧取值、发现时间），进 `/reconcile` 待人裁定；
+    裁定前两侧原值都保留。可「按班组」（技术组对齐班组）或「按技术组」结案并留备注；
+    长势定级为技术组专属，历史定级差异只能按技术组结案。
+* **表结构（v3）**：
 
   | 表 | 主键 | 主要索引 |
   | --- | --- | --- |
   | `trees` | id | code, species, protectLevel, ageYears, createdAt, updatedAt, owner |
-  | `surveys` | id | treeId, [treeId+date], date, siteNote |
-  | `measures` | id | treeId, type, state, date, operator |
-  | `supports` | id | treeId, type, installDate, lastCheckDate |
-  | `reviews` | id | treeId, date, vigor, trend |
+  | `surveys` | id | treeId, [treeId+date], date, siteNote, owner, syncState |
+  | `measures` | id | treeId, type, state, date, operator, owner, syncState |
+  | `supports` | id | treeId, type, installDate, lastCheckDate, techCheckDate, owner, syncState |
+  | `reviews` | id | treeId, date, vigor, trend, owner |
+  | `discrepancies` | id | entity, recordId, treeId, status, foundAt |
+  | `meta` | key | （`ledgerSplitEnabled` / `simulateOffline` / `lastCrewSyncAt`） |
 
 * **首屏演示数据**：`initDatabase()` 在打开数据库后检测 `trees` 表是否为空，为空则调用 `utils/seed.ts` 播种，
   幂等且只执行一次。播种链路为 **古树 → 树体检查 / 复壮措施 / 加固件 / 长势复评** 三层互相引用：
@@ -124,7 +142,7 @@ sologsb101-1015/
     7 条长势复评（含衰弱 / 濒危样本且均已填写后续措施）。
   * 固定 id 如 `tree-guozijian-0007`、`tree-xiangshan-0113`、`tree-ritan-0246` 可直接用于深链验证。
 * **其他本地数据**：`localStorage` 仅保存「最近选中的古树 id」这一界面偏好，不存业务数据。
-* 删除古树会**级联清理**其下的树体检查、复壮措施、加固件与复评记录（同一 Dexie 事务内完成）。
+* 删除古树会**级联清理**其下的树体检查、复壮措施、加固件、复评记录与待裁定差异（同一 Dexie 事务内完成）。
 
 ---
 
@@ -144,6 +162,13 @@ npm run typecheck    # 仅做 TypeScript 类型检查
 npm run preview      # 预览 dist 产物
 ```
 
+两侧分账的运行时自检（Node + `fake-indexeddb`，验证互不覆盖 / 离线重试 / 对账裁定 / v2→v3 迁移）：
+
+```bash
+npx vite-node scripts/verify-ledger.ts    # 分账、同步、重试、对账规则
+npx vite-node scripts/verify-upgrade.ts   # v2 旧库首启迁移到两侧再启用
+```
+
 ---
 
 ## 七、核心业务规则
@@ -155,3 +180,5 @@ npm run preview      # 预览 dist 产物
   「登记本次检查」会把最近检查日期置为今天并解除高亮。
 * **复评强制校验**：长势为「衰弱」或「濒危」时，后续措施为必填项，未填写无法保存。
 * **措施回写**：复壮措施状态改为「已完成」时，若实施日期晚于古树现有最近复壮日期，则自动回写该日期。
+* **两侧分账**：班组只写现场（树体检查 / 复壮措施 / 加固件检查日期），技术组只写判定（检查周期 / 长势定级）；
+  班组现场记录推技术组、失败按本侧重试，技术组定级不回退；两侧对不上先进 `/reconcile` 挂账，写清编号等人裁定。

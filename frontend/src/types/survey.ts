@@ -1,7 +1,9 @@
 /**
- * 树体检查（Survey）
+ * 树体检查（Survey）—— 班组侧现场记录
  * 每次检查记录树高、胸径、冠幅、倾斜度、空洞数与立地状况。
+ * 归属养护班组：只有班组能新增 / 改写；登记后按「班组 → 技术组」推给技术组对账。
  */
+import type { CrewLedgerFields } from './ledger'
 
 /** 立地状况：铺装 / 裸土 / 积水 */
 export type SiteNote = '铺装' | '裸土' | '积水'
@@ -26,6 +28,13 @@ export interface Survey {
   hollowCount: number
   /** 立地状况 */
   siteNote: SiteNote
+  /* ---- 分账（班组侧现场记录）与班组 → 技术组同步字段 ---- */
+  owner: CrewLedgerFields['owner']
+  crewUpdatedAt: string
+  techAckAt: string
+  syncState: CrewLedgerFields['syncState']
+  lastSyncAt: string
+  syncError: string
   createdAt: string
   updatedAt: string
   revision: number

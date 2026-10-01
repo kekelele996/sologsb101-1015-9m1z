@@ -1,12 +1,13 @@
 /**
- * 长势复评状态管理（Pinia）
+ * 长势复评状态管理（Pinia）—— 区技术组侧
  * 维护长势筛选条件与复评结论派生值；长势为衰弱 / 濒危时强制填写后续措施。
+ * 复评（含长势定级）只由技术组写入；班组新做的现场检查不会改写本侧定级。
  */
 import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Review, ReviewDraft, Trend, Vigor } from '../types/review'
 import { VIGOR_NEED_FOLLOW_UP, VIGOR_OPTIONS } from '../types/review'
-import { db, initDatabase, putReview, removeReview } from '../utils/db'
+import { db, initDatabase, putTechReview, removeReview } from '../utils/db'
 import { nowIso, uuid } from '../utils/id'
 import { useTreeStore } from './treeStore'
 
@@ -103,11 +104,13 @@ export const useReviewStore = defineStore('review', () => {
       trend: draft.trend,
       conclusion: draft.conclusion.trim(),
       followUp: draft.followUp.trim(),
+      owner: 'tech',
+      techUpdatedAt: stamp,
       createdAt: stamp,
       updatedAt: stamp,
-      revision: 2,
+      revision: 3,
     }
-    await putReview(row)
+    await putTechReview(row)
     revision.value += 1
     lastMessage.value = `已登记 ${row.date} 长势复评：${row.vigor}（${row.trend}）`
     return row
@@ -121,7 +124,7 @@ export const useReviewStore = defineStore('review', () => {
     }
     const existing = await db.reviews.get(reviewId)
     if (!existing) return { ok: false, message: '复评记录不存在' }
-    await putReview({
+    await putTechReview({
       ...existing,
       treeId: draft.treeId,
       date: draft.date,

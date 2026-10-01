@@ -1,6 +1,8 @@
 /**
- * 复壮措施状态管理（Pinia）
+ * 复壮措施状态管理（Pinia）—— 养护班组侧
  * 维护措施草稿、实施状态流转与批量操作；完成即回写古树最近复壮日期。
+ * 措施是班组现场记录：新建 / 编辑 / 推进后默认「待同步」到技术组，
+ * 同步失败按班组本侧重试；技术组不回退班组措施。
  */
 import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
@@ -9,7 +11,7 @@ import {
   batchSetMeasureState,
   db,
   initDatabase,
-  putMeasure,
+  putCrewMeasure,
   removeMeasure,
 } from '../utils/db'
 import { nowIso, uuid } from '../utils/id'
@@ -77,10 +79,15 @@ export const useMeasureStore = defineStore('measure', () => {
     if (draft === undefined) return
     const existing = await db.measures.get(measureId)
     if (!existing) return
-    await putMeasure({ ...existing, ...draft } as Measure)
+    await putCrewMeasure({
+      ...existing,
+      ...draft,
+      syncState: 'pending',
+      syncError: '',
+    } as Measure)
     clearDraft(measureId)
     revision.value += 1
-    lastMessage.value = '措施草稿已保存'
+    lastMessage.value = '措施草稿已保存，等待同步到技术组台账'
   }
 
   async function createMeasure(draft: MeasureDraft): Promise<Measure> {
@@ -93,14 +100,22 @@ export const useMeasureStore = defineStore('measure', () => {
       material: draft.material.trim(),
       operator: draft.operator.trim(),
       state: draft.state,
+      owner: 'crew',
+      crewUpdatedAt: stamp,
+      techAckAt: '',
+      syncState: 'pending',
+      lastSyncAt: '',
+      syncError: '',
       createdAt: stamp,
       updatedAt: stamp,
-      revision: 2,
+      revision: 3,
     }
-    await putMeasure(row)
+    await putCrewMeasure(row)
     revision.value += 1
     if (row.state === '已完成') {
-      lastMessage.value = '措施已登记为「已完成」，古树最近复壮日期已回写'
+      lastMessage.value = '措施已登记为「已完成」，古树最近复壮日期已回写，等待同步到技术组'
+    } else {
+      lastMessage.value = '措施已登记，等待同步到技术组台账'
     }
     return row
   }
@@ -108,7 +123,7 @@ export const useMeasureStore = defineStore('measure', () => {
   async function updateMeasure(measureId: string, draft: MeasureDraft): Promise<void> {
     const existing = await db.measures.get(measureId)
     if (!existing) return
-    await putMeasure({
+    await putCrewMeasure({
       ...existing,
       treeId: draft.treeId,
       type: draft.type,
@@ -116,6 +131,8 @@ export const useMeasureStore = defineStore('measure', () => {
       material: draft.material.trim(),
       operator: draft.operator.trim(),
       state: draft.state,
+      syncState: 'pending',
+      syncError: '',
     })
     revision.value += 1
   }
@@ -135,7 +152,7 @@ export const useMeasureStore = defineStore('measure', () => {
     const index = flow.indexOf(existing.state)
     if (index < 0 || index >= flow.length - 1) return null
     const next = flow[index + 1]
-    await putMeasure({ ...existing, state: next })
+    await putCrewMeasure({ ...existing, state: next, syncState: 'pending', syncError: '' })
     revision.value += 1
     lastMessage.value = next === '已完成' ? '措施已完成，古树最近复壮日期已回写' : `措施状态已推进为「${next}」`
     return next

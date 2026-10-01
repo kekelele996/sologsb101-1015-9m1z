@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * /reviews 长势复评与结构版本
- * 复评增删改（衰弱 / 濒危强制填写后续措施）、古树历史时间线、JSON 导入导出与结构版本查看。
+ * /reviews 长势复评与结构版本 —— 区技术组侧
+ * 技术组复评增删改（衰弱 / 濒危强制填写后续措施）、古树历史时间线、JSON 导入导出与结构版本查看。
+ * 定级只由技术组写：班组新做的树体检查不会改写本页复评等级（定级不回退）。
  * 消费模型：Review、Measure、全部模型；复用组件：<VigorTag>、<EmptyPanel>、<StatBadge>、<FilterBar>
  */
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -23,7 +24,7 @@ const router = useRouter()
 const treeStore = useTreeStore()
 const reviewStore = useReviewStore()
 
-const { rows, loading, remove } = useIdbTable<Review>(db.reviews, { sortByUpdatedAt: false })
+const { rows, loading } = useIdbTable<Review>(db.reviews, { sortByUpdatedAt: false })
 
 const dialogVisible = ref(false)
 const submitting = ref(false)
@@ -156,7 +157,6 @@ async function handleDelete(row: Review): Promise<void> {
   } catch {
     return
   }
-  await remove(row.id)
   await reviewStore.deleteReview(row.id)
   ElMessage.success('复评记录已删除')
 }
@@ -256,12 +256,23 @@ function handleFilterChange(key: string, value: string): void {
       description="请到复评列表中补充后续措施（换土、透气、树洞修补、加固等），否则无法通过复评校验。"
     />
 
+    <el-alert
+      type="success"
+      show-icon
+      :closable="false"
+      class="mb-14"
+      title="本页为区技术组台账：检查周期与长势定级只由技术组填写，养护班组新登记的树体检查不会改写已定等级。"
+    />
+
     <el-row :gutter="14">
       <el-col :xs="24" :lg="17">
         <el-card shadow="never">
           <template #header>
             <div class="card-header">
-              <span class="card-header__title">长势复评与结构版本</span>
+              <div class="card-header__titlewrap">
+                <span class="card-header__title">长势复评与结构版本</span>
+                <el-tag type="success" size="small" effect="plain">区技术组定级 · 班组检查不改写</el-tag>
+              </div>
               <el-space wrap>
                 <el-button @click="handleExport">
                   <el-icon><Download /></el-icon>
@@ -495,6 +506,13 @@ function handleFilterChange(key: string, value: string): void {
   font-size: 15px;
   font-weight: 600;
   color: #2f2a24;
+}
+
+.card-header__titlewrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .cell-stack {

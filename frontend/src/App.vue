@@ -3,9 +3,9 @@
  * 应用外壳：顶部导航 + 当前古树上下文 + 内容区 + 页脚
  * 同时负责初始化本地数据库与 Pinia store 的数据订阅。
  */
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Coin, Files, FirstAidKit, Histogram, OfficeBuilding } from '@element-plus/icons-vue'
+import { Coin, DocumentChecked, Files, FirstAidKit, Histogram, OfficeBuilding } from '@element-plus/icons-vue'
 import { useTreeStore } from '@/stores/treeStore'
 import { useMeasureStore } from '@/stores/measureStore'
 import { useReviewStore } from '@/stores/reviewStore'
@@ -20,17 +20,43 @@ const reviewStore = useReviewStore()
 const navItems = computed(() => {
   const currentTreeId = treeStore.currentTreeId
   return [
-    { path: ROUTES.trees, label: '古树档案', icon: OfficeBuilding, badge: String(treeStore.trees.length) },
+    { path: ROUTES.trees, label: '古树档案', icon: OfficeBuilding, badge: String(treeStore.trees.length), danger: false },
     {
       path: currentTreeId ? ROUTES.surveys(currentTreeId) : ROUTES.trees,
-      label: '树体检查',
+      label: '树体检查·班组',
       icon: Files,
       badge: String(treeStore.surveys.length),
       disabled: currentTreeId === null,
+      danger: false,
     },
-    { path: ROUTES.measures, label: '复壮措施', icon: FirstAidKit, badge: String(treeStore.measures.length) },
-    { path: ROUTES.supports, label: '加固件', icon: Coin, badge: String(treeStore.supports.length) },
-    { path: ROUTES.reviews, label: '长势复评', icon: Histogram, badge: String(treeStore.reviews.length) },
+    {
+      path: ROUTES.measures,
+      label: '复壮措施·班组',
+      icon: FirstAidKit,
+      badge: String(treeStore.measures.length),
+      danger: false,
+    },
+    {
+      path: ROUTES.supports,
+      label: '加固件',
+      icon: Coin,
+      badge: String(treeStore.supports.length),
+      danger: treeStore.failedCrewCount > 0,
+    },
+    {
+      path: ROUTES.reviews,
+      label: '长势复评·技术组',
+      icon: Histogram,
+      badge: String(treeStore.reviews.length),
+      danger: false,
+    },
+    {
+      path: ROUTES.reconcile,
+      label: '对账裁定',
+      icon: DocumentChecked,
+      badge: String(treeStore.pendingDiscrepancyCount),
+      danger: treeStore.pendingDiscrepancyCount > 0,
+    },
   ]
 })
 
@@ -44,10 +70,19 @@ const activePath = computed<string>(() => {
 
 const overdueCount = computed<number>(() => treeStore.overdueSupports.length)
 
+function gotoReconcile(): void {
+  void router.push(ROUTES.reconcile)
+}
+
 onMounted(() => {
   void treeStore.loadAll()
   void measureStore.init()
   void reviewStore.init()
+  window.addEventListener('goto-reconcile', gotoReconcile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('goto-reconcile', gotoReconcile)
 })
 
 function go(path: string): void {
@@ -70,14 +105,14 @@ function go(path: string): void {
           v-for="item in navItems"
           :key="item.label"
           class="app-nav__item"
-          :class="{ 'is-active': activePath === item.path, 'is-disabled': item.disabled }"
+          :class="{ 'is-active': activePath === item.path, 'is-disabled': item.disabled, 'is-danger': item.danger }"
           type="button"
           :disabled="item.disabled"
           @click="go(item.path)"
         >
           <el-icon><component :is="item.icon" /></el-icon>
           <span>{{ item.label }}</span>
-          <em v-if="item.badge !== '0'" class="app-nav__badge">{{ item.badge }}</em>
+          <em v-if="item.badge !== '0'" class="app-nav__badge" :class="{ 'app-nav__badge--danger': item.danger }">{{ item.badge }}</em>
         </button>
       </nav>
       <div class="app-header__meta">
@@ -85,6 +120,15 @@ function go(path: string): void {
           当前古树：{{ treeStore.currentTree.code }} {{ treeStore.currentTree.species }}
         </el-tag>
         <el-tag v-else type="info">未选择古树</el-tag>
+        <el-tag v-if="treeStore.pendingCrewCount > 0" type="warning" effect="dark">
+          班组待同步 {{ treeStore.pendingCrewCount }} 条
+        </el-tag>
+        <el-tag v-if="treeStore.failedCrewCount > 0" type="danger" effect="dark">
+          同步失败 {{ treeStore.failedCrewCount }} 条
+        </el-tag>
+        <el-tag v-if="treeStore.pendingDiscrepancyCount > 0" type="danger" effect="plain">
+          对账待裁定 {{ treeStore.pendingDiscrepancyCount }} 条
+        </el-tag>
         <el-tag v-if="overdueCount > 0" type="danger" effect="dark">加固件超期 {{ overdueCount }} 件</el-tag>
       </div>
     </header>
@@ -192,6 +236,26 @@ function go(path: string): void {
   padding: 0 6px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.18);
+}
+
+.app-nav__item.is-danger {
+  border-color: rgba(255, 209, 209, 0.75);
+}
+
+.app-nav__badge--danger {
+  background: #c0392b;
+  color: #fff;
+  animation: badge-pulse 1.6s infinite;
+}
+
+@keyframes badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .app-header__meta {

@@ -11,6 +11,7 @@ import type { Survey } from '../types/survey'
 import type { Measure } from '../types/measure'
 import type { Support } from '../types/support'
 import type { Review, Trend, Vigor } from '../types/review'
+import type { LedgerDiscrepancy } from '../types/ledger'
 import { VIGOR_NEED_FOLLOW_UP } from '../types/review'
 import {
   DB_SCHEMA_VERSION,
@@ -110,6 +111,7 @@ export const useTreeStore = defineStore('tree', () => {
   const measures = ref<Measure[]>([])
   const supports = ref<Support[]>([])
   const reviews = ref<Review[]>([])
+  const discrepancies = ref<LedgerDiscrepancy[]>([])
   const loading = ref(true)
   const ready = ref(false)
   const error = ref('')
@@ -189,6 +191,32 @@ export const useTreeStore = defineStore('tree', () => {
     supports.value.filter((row) => isSupportOverdue(row.lastCheckDate, row.checkCycleMon))
   )
 
+  /** 班组侧待同步 / 同步失败的现场记录数（树体检查 + 措施 + 加固件检查日期） */
+  const pendingCrewCount = computed<number>(() => {
+    const isPending = (row: { syncState?: string }): boolean =>
+      row.syncState === 'pending' || row.syncState === 'failed'
+    return (
+      surveys.value.filter(isPending).length +
+      measures.value.filter(isPending).length +
+      supports.value.filter(isPending).length
+    )
+  })
+
+  /** 班组侧同步失败的记录数 */
+  const failedCrewCount = computed<number>(() => {
+    const isFailed = (row: { syncState?: string }): boolean => row.syncState === 'failed'
+    return (
+      surveys.value.filter(isFailed).length +
+      measures.value.filter(isFailed).length +
+      supports.value.filter(isFailed).length
+    )
+  })
+
+  /** 两侧对不上、待人裁定的差异数 */
+  const pendingDiscrepancyCount = computed<number>(
+    () => discrepancies.value.filter((row) => row.status === 'pending').length
+  )
+
   function statOf(treeId: string): TreeStat {
     return stats.value[treeId] ?? { treeId, ...EMPTY_STAT }
   }
@@ -201,22 +229,25 @@ export const useTreeStore = defineStore('tree', () => {
       if (!subscribed) {
         subscribed = true
         liveQuery(async () => {
-          const [treeRows, surveyRows, measureRows, supportRows, reviewRows] = await Promise.all([
-            db.trees.toArray(),
-            db.surveys.toArray(),
-            db.measures.toArray(),
-            db.supports.toArray(),
-            db.reviews.toArray(),
-          ])
-          return { treeRows, surveyRows, measureRows, supportRows, reviewRows }
+          const [treeRows, surveyRows, measureRows, supportRows, reviewRows, discrepancyRows] =
+            await Promise.all([
+              db.trees.toArray(),
+              db.surveys.toArray(),
+              db.measures.toArray(),
+              db.supports.toArray(),
+              db.reviews.toArray(),
+              db.discrepancies.toArray(),
+            ])
+          return { treeRows, surveyRows, measureRows, supportRows, reviewRows, discrepancyRows }
         }).subscribe({
-          next: ({ treeRows, surveyRows, measureRows, supportRows, reviewRows }) => {
+          next: ({ treeRows, surveyRows, measureRows, supportRows, reviewRows, discrepancyRows }) => {
             const sorted = [...treeRows].sort((a, b) => a.code.localeCompare(b.code, 'zh-Hans-CN'))
             trees.value = sorted
             surveys.value = surveyRows
             measures.value = measureRows
             supports.value = supportRows
             reviews.value = reviewRows
+            discrepancies.value = discrepancyRows
             loading.value = false
             ready.value = true
             error.value = ''
@@ -305,6 +336,7 @@ export const useTreeStore = defineStore('tree', () => {
     measures,
     supports,
     reviews,
+    discrepancies,
     loading,
     ready,
     error,
@@ -316,6 +348,9 @@ export const useTreeStore = defineStore('tree', () => {
     stats,
     visibleTrees,
     overdueSupports,
+    pendingCrewCount,
+    failedCrewCount,
+    pendingDiscrepancyCount,
     statOf,
     loadAll,
     selectTree,

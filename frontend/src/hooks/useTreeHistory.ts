@@ -60,13 +60,15 @@ export function buildHistory(
     })
   })
   supports.forEach((row) => {
+    const mismatch = row.lastCheckDate !== row.techCheckDate
     items.push({
       key: `support-${row.id}`,
       kind: 'support',
       date: row.installDate,
       title: `加固件 · ${row.type}`,
-      detail: `安装于 ${row.installDate}，检查周期 ${row.checkCycleMon} 个月，最近检查 ${row.lastCheckDate || '未记录'}`,
-      badge: row.type,
+      detail: `安装于 ${row.installDate}；技术组定检查周期 ${row.checkCycleMon} 个月；班组最近检查 ${row.lastCheckDate || '未记录'}` +
+        (mismatch ? `（技术组已确认 ${row.techCheckDate || '未记录'}，两侧不一致待裁定）` : ''),
+      badge: mismatch ? '待裁定' : row.type,
     })
   })
   reviews.forEach((row) => {

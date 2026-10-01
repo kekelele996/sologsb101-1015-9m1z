@@ -193,7 +193,10 @@ function handleFilterChange(key: string, value: string): void {
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span class="card-header__title">复壮措施台账</span>
+          <div class="card-header__titlewrap">
+            <span class="card-header__title">复壮措施台账</span>
+            <el-tag type="warning" size="small" effect="plain">养护班组侧 · 登记后同步技术组</el-tag>
+          </div>
           <el-button type="primary" @click="openCreate" :disabled="treeStore.trees.length === 0">
             <el-icon><Plus /></el-icon>
             <span>新增复壮措施</span>
@@ -328,6 +331,16 @@ function handleFilterChange(key: string, value: string): void {
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="同步技术组" width="110">
+          <template #default="{ row }">
+            <el-tag
+              size="small"
+              :type="row.syncState === 'synced' ? 'success' : row.syncState === 'failed' ? 'danger' : 'info'"
+            >
+              {{ row.syncState === 'synced' ? '已收' : row.syncState === 'failed' ? '失败' : '待同步' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="草稿" width="150">
           <template #default="{ row }">
             <el-button v-if="measureStore.hasDraft(row.id)" size="small" type="primary" @click="measureStore.saveDraft(row.id)">
@@ -442,6 +455,13 @@ function handleFilterChange(key: string, value: string): void {
   font-size: 15px;
   font-weight: 600;
   color: #2f2a24;
+}
+
+.card-header__titlewrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .batch-row {

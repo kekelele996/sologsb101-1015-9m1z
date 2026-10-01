@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * /trees/:id/surveys 树体与立地检查
- * 录树高 / 胸径 / 冠幅 / 倾斜 / 空洞并对比上次，展示古树历史时间线。
+ * /trees/:id/surveys 树体与立地检查 —— 养护班组侧现场记录
+ * 班组录树高 / 胸径 / 冠幅 / 倾斜 / 空洞并对比上次，展示古树历史时间线；
+ * 新登记的检查只写班组侧并待同步到技术组，技术组调整周期 / 定级不会删掉本页记录。
  * 消费模型：Survey、Tree；复用组件：<StatBadge>、<EmptyPanel>
  */
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -12,6 +13,7 @@ import StatBadge from '@/components/common/StatBadge.vue'
 import { useIdbTable } from '@/hooks/useIdbTable'
 import { HISTORY_KIND_LABEL, useTreeHistory } from '@/hooks/useTreeHistory'
 import { useTreeStore } from '@/stores/treeStore'
+import { useSurveyStore } from '@/stores/surveyStore'
 import { db } from '@/utils/db'
 import { SITE_NOTE_OPTIONS, type SiteNote, type Survey, type SurveyDraft } from '@/types/survey'
 import { LEAN_DANGER_DEG, LEAN_WATCH_DEG, annualGrowth, hollowRisk, leanLevel, siteAdvice } from '@/utils/dimension'
@@ -19,10 +21,11 @@ import { LEAN_DANGER_DEG, LEAN_WATCH_DEG, annualGrowth, hollowRisk, leanLevel, s
 const route = useRoute()
 const router = useRouter()
 const treeStore = useTreeStore()
+const surveyStore = useSurveyStore()
 
 const treeId = computed<string>(() => String(route.params.id ?? ''))
 const tree = computed(() => treeStore.trees.find((item) => item.id === treeId.value) ?? null)
-const { rows, loading, create, update, remove } = useIdbTable<Survey>(db.surveys, { sortByUpdatedAt: false })
+const { rows, loading } = useIdbTable<Survey>(db.surveys, { sortByUpdatedAt: false })
 const { items } = useTreeHistory(treeId)
 
 const dialogVisible = ref(false)
@@ -92,6 +95,7 @@ const risk = computed(() => (latest.value === null ? null : hollowRisk(latest.va
 
 onMounted(() => {
   void treeStore.loadAll()
+  void surveyStore.init()
 })
 
 function openCreate(): void {
@@ -131,11 +135,11 @@ async function handleSubmit(): Promise<void> {
   submitting.value = true
   try {
     if (editingId.value === null) {
-      await create({ ...form }, 'survey')
-      ElMessage.success('树体检查记录已登记')
+      await surveyStore.createSurvey({ ...form })
+      ElMessage.success('树体检查已登记（班组侧），将同步到技术组台账')
     } else {
-      await update(editingId.value, { ...form })
-      ElMessage.success('检查记录已更新')
+      await surveyStore.updateSurvey(editingId.value, { ...form })
+      ElMessage.success('检查记录已更新（班组侧），将重新同步到技术组台账')
     }
     if (leanLevel(form.leanDeg) === 'danger') {
       ElMessage({
@@ -162,8 +166,8 @@ async function handleDelete(row: Survey): Promise<void> {
   } catch {
     return
   }
-  await remove(row.id)
-  ElMessage.success('检查记录已删除')
+  await surveyStore.deleteSurvey(row.id)
+  ElMessage.success('检查记录已从班组台账删除')
 }
 </script>
 
@@ -259,7 +263,10 @@ async function handleDelete(row: Survey): Promise<void> {
           <el-card shadow="never">
             <template #header>
               <div class="card-header">
-                <span class="card-header__title">树体与立地检查记录</span>
+                <div class="card-header__titlewrap">
+                  <span class="card-header__title">树体与立地检查记录</span>
+                  <el-tag type="warning" size="small" effect="plain">养护班组侧现场记录</el-tag>
+                </div>
                 <el-button type="primary" @click="openCreate">
                   <el-icon><Plus /></el-icon>
                   <span>新增检查</span>
@@ -277,6 +284,16 @@ async function handleDelete(row: Survey): Promise<void> {
 
             <el-table v-else v-loading="loading" :data="displayRows" row-key="id" stripe>
               <el-table-column prop="date" label="检查日期" width="120" />
+              <el-table-column label="同步" width="110">
+                <template #default="{ row }">
+                  <el-tag
+                    size="small"
+                    :type="row.syncState === 'synced' ? 'success' : row.syncState === 'failed' ? 'danger' : 'info'"
+                  >
+                    {{ row.syncState === 'synced' ? '技术组已收' : row.syncState === 'failed' ? '同步失败' : '待同步' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column label="树高(m)" width="150">
                 <template #default="{ row }">
                   <div class="cell-stack">
@@ -433,6 +450,13 @@ async function handleDelete(row: Survey): Promise<void> {
   font-size: 15px;
   font-weight: 600;
   color: #2f2a24;
+}
+
+.card-header__titlewrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .cell-stack {

@@ -66,11 +66,16 @@ export function parseSnapshot(text: string): SnapshotParseResult {
       snapshot: null,
     }
   }
-  const collections: Array<keyof DatabaseSnapshot> = ['trees', 'surveys', 'measures', 'supports', 'reviews']
-  for (const key of collections) {
+  // v3 起新增 discrepancies；导入旧版（v1/v2）存档时缺省为空，按两侧一致处理
+  const requiredCollections: Array<keyof DatabaseSnapshot> = ['trees', 'surveys', 'measures', 'supports', 'reviews']
+  for (const key of requiredCollections) {
     if (!Array.isArray(data[key])) {
       return { ok: false, message: `存档缺少 ${String(key)} 数组。`, snapshot: null }
     }
+  }
+  if (data.discrepancies === undefined) data.discrepancies = []
+  if (!Array.isArray(data.discrepancies)) {
+    return { ok: false, message: '存档 discrepancies 字段必须是数组。', snapshot: null }
   }
   return { ok: true, message: '存档校验通过。', snapshot: data as DatabaseSnapshot }
 }

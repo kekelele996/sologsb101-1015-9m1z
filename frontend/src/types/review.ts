@@ -1,7 +1,10 @@
 /**
- * 长势复评（Review）
+ * 长势复评（Review）—— 技术组侧定级记录
  * 长势为「衰弱」或「濒危」时必须填写后续措施。
+ * 归属区技术组：检查周期与长势定级只由技术组写；
+ * 班组新做的树体检查不会改写技术组已定的复评等级（定级不回退）。
  */
+import type { TechLedgerFields } from './ledger'
 
 /** 长势等级 */
 export type Vigor = '旺盛' | '一般' | '衰弱' | '濒危'
@@ -29,6 +32,10 @@ export interface Review {
   conclusion: string
   /** 后续措施（长势为衰弱 / 濒危时必填） */
   followUp: string
+  /* ---- 分账（技术组侧定级） ---- */
+  owner: TechLedgerFields['owner']
+  /** 技术组侧最后定级时间 */
+  techUpdatedAt: string
   createdAt: string
   updatedAt: string
   revision: number

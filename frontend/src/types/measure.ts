@@ -1,7 +1,10 @@
 /**
- * 复壮措施（Measure）
+ * 复壮措施（Measure）—— 班组侧现场记录
  * 换土、施肥、透气、树洞修补、病虫害防治等，按实施状态跟踪。
+ * 归属养护班组：实施日期 / 状态等现场信息只由班组登记，
+ * 登记后按「班组 → 技术组」推给技术组；技术组不回退班组措施。
  */
+import type { CrewLedgerFields } from './ledger'
 
 /** 措施类型 */
 export type MeasureType = '换土' | '施肥' | '透气' | '树洞修补' | '病虫害防治'
@@ -26,6 +29,13 @@ export interface Measure {
   operator: string
   /** 实施状态 */
   state: MeasureState
+  /* ---- 分账（班组侧现场记录）与班组 → 技术组同步字段 ---- */
+  owner: CrewLedgerFields['owner']
+  crewUpdatedAt: string
+  techAckAt: string
+  syncState: CrewLedgerFields['syncState']
+  lastSyncAt: string
+  syncError: string
   createdAt: string
   updatedAt: string
   revision: number

@@ -11,6 +11,7 @@ export const ROUTES = {
   measures: '/measures',
   supports: '/supports',
   reviews: '/reviews',
+  reconcile: '/reconcile',
 } as const
 
 const routes: RouteRecordRaw[] = [
@@ -44,6 +45,12 @@ const routes: RouteRecordRaw[] = [
     name: 'review-view',
     component: () => import('@/pages/ReviewView.vue'),
     meta: { title: '长势复评与结构版本' },
+  },
+  {
+    path: '/reconcile',
+    name: 'reconcile-view',
+    component: () => import('@/pages/ReconcileView.vue'),
+    meta: { title: '两侧台账对账' },
   },
   { path: '/:pathMatch(.*)*', redirect: ROUTES.trees },
 ]
