@@ -1,7 +1,9 @@
 /**
  * 长势复评（Review）
  * 长势为「衰弱」或「濒危」时必须填写后续措施。
+ * 归属技术组（定级侧）：班组新做的检查不改写已定级。
  */
+import type { Side } from './side'
 
 /** 长势等级 */
 export type Vigor = '旺盛' | '一般' | '衰弱' | '濒危'
@@ -19,6 +21,8 @@ export interface Review {
   id: string
   /** 所属古树 */
   treeId: string
+  /** 记录归属方：技术组定级 */
+  side: Side
   /** 复评日期 YYYY-MM-DD */
   date: string
   /** 长势 */

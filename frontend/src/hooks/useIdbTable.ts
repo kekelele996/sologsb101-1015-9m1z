@@ -15,14 +15,16 @@ export interface IdbRow {
   revision: number
 }
 
-/** 新增记录入参：id / 时间戳 / 修订号由封装层补齐 */
-export type NewRow<T extends IdbRow> = Omit<T, 'id' | 'createdAt' | 'updatedAt' | 'revision'> & {
+/** 新增记录入参：id / 时间戳 / 修订号 / 归属方由封装层补齐 */
+export type NewRow<T extends IdbRow> = Omit<T, 'id' | 'createdAt' | 'updatedAt' | 'revision' | 'side'> & {
   id?: string
 }
 
 export interface UseIdbTableOptions<T extends IdbRow> {
   /** 是否按 updatedAt 倒序，默认 true */
   sortByUpdatedAt?: boolean
+  /** 新建记录的归属方（班组 / 技术组），按两边拆分写入 */
+  side?: 'team' | 'tech'
   onChange?: (rows: T[]) => void
 }
 
@@ -46,7 +48,7 @@ export function useIdbTable<T extends IdbRow>(
   table: Table<T, string>,
   options: UseIdbTableOptions<T> = {}
 ): UseIdbTableResult<T> {
-  const { sortByUpdatedAt = true, onChange } = options
+  const { sortByUpdatedAt = true, side, onChange } = options
 
   const rows = ref([]) as Ref<T[]>
   const loading = ref(true)
@@ -101,6 +103,7 @@ export function useIdbTable<T extends IdbRow>(
     const stamp = nowIso()
     const record = {
       ...(payload as object),
+      ...(side === undefined ? {} : { side }),
       id: payload.id ?? uuid(idPrefix),
       createdAt: stamp,
       updatedAt: stamp,

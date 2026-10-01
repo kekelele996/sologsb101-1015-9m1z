@@ -6,7 +6,7 @@ import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Review, ReviewDraft, Trend, Vigor } from '../types/review'
 import { VIGOR_NEED_FOLLOW_UP, VIGOR_OPTIONS } from '../types/review'
-import { db, initDatabase, putReview, removeReview } from '../utils/db'
+import { db, initDatabase, putReview, removeReview, ROW_REVISION } from '../utils/db'
 import { nowIso, uuid } from '../utils/id'
 import { useTreeStore } from './treeStore'
 
@@ -89,6 +89,11 @@ export const useReviewStore = defineStore('review', () => {
   }
 
   async function createReview(draft: ReviewDraft): Promise<Review | null> {
+    const treeStore = useTreeStore()
+    if (treeStore.isTeam) {
+      lastMessage.value = '长势复评由技术组定级，班组侧只登记现场检查，不改写复评定级'
+      return null
+    }
     const check = validate(draft)
     if (!check.ok) {
       lastMessage.value = check.message
@@ -98,6 +103,7 @@ export const useReviewStore = defineStore('review', () => {
     const row: Review = {
       id: uuid('review'),
       treeId: draft.treeId,
+      side: 'tech',
       date: draft.date,
       vigor: draft.vigor,
       trend: draft.trend,
@@ -105,7 +111,7 @@ export const useReviewStore = defineStore('review', () => {
       followUp: draft.followUp.trim(),
       createdAt: stamp,
       updatedAt: stamp,
-      revision: 2,
+      revision: ROW_REVISION,
     }
     await putReview(row)
     revision.value += 1
@@ -114,6 +120,10 @@ export const useReviewStore = defineStore('review', () => {
   }
 
   async function updateReview(reviewId: string, draft: ReviewDraft): Promise<ReviewValidation> {
+    const treeStore = useTreeStore()
+    if (treeStore.isTeam) {
+      return { ok: false, message: '长势复评由技术组定级，班组侧不改写复评定级' }
+    }
     const check = validate(draft)
     if (!check.ok) {
       lastMessage.value = check.message

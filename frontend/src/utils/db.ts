@@ -1,7 +1,8 @@
 /**
  * IndexedDB 持久化层（Dexie 封装）
  * - 数据库名：gbheritagetree
- * - 含数据结构版本号与 v1 → v2 升级迁移逻辑（升级时按 version().stores() 补齐索引）
+ * - 含数据结构版本号与 v1 → v2 → v3 升级迁移逻辑（升级时按 version().stores() 补齐索引）
+ * - v3：拆两边归属（班组 / 技术组），新增对账待裁定表 recon 与班组同步发件箱 sync_outbox
  * - 提供各表增删改查、整库快照导入导出与重置
  * 纯前端应用：不依赖任何后端服务或外部接口。
  */
@@ -11,6 +12,7 @@ import type { Survey } from '../types/survey'
 import type { Measure, MeasureState } from '../types/measure'
 import type { Support } from '../types/support'
 import type { Review } from '../types/review'
+import type { ReconItem, OutboxItem } from '../types/recon'
 import { nowIso, today } from './id'
 import { seedDatabase } from './seed'
 
@@ -18,10 +20,10 @@ import { seedDatabase } from './seed'
 export const DB_NAME = 'gbheritagetree'
 
 /** 当前数据结构版本号（每次调整字段结构必须 +1 并补迁移） */
-export const DB_SCHEMA_VERSION = 2
+export const DB_SCHEMA_VERSION = 3
 
 /** 数据行结构修订号 */
-export const ROW_REVISION = 2
+export const ROW_REVISION = 3
 
 class HeritageTreeDatabase extends Dexie {
   trees!: Table<Tree, string>
@@ -29,6 +31,10 @@ class HeritageTreeDatabase extends Dexie {
   measures!: Table<Measure, string>
   supports!: Table<Support, string>
   reviews!: Table<Review, string>
+  /** 两边对账待裁定条目 */
+  recon!: Table<ReconItem, string>
+  /** 班组同步发件箱（失败后按本侧重试） */
+  sync_outbox!: Table<OutboxItem, string>
 
   constructor() {
     super(DB_NAME)
@@ -43,7 +49,7 @@ class HeritageTreeDatabase extends Dexie {
     })
 
     // ---------- v2：补齐索引与回写字段，并迁移历史数据 ----------
-    this.version(DB_SCHEMA_VERSION)
+    this.version(2)
       .stores({
         trees: 'id, code, species, protectLevel, ageYears, createdAt, updatedAt, owner',
         // 复合索引 [treeId+date]：按古树 + 日期快速取检查记录
@@ -80,6 +86,45 @@ class HeritageTreeDatabase extends Dexie {
         await tx.table('supports').toCollection().modify((row: Record<string, unknown>) => {
           if (typeof row.lastCheckDate !== 'string') row.lastCheckDate = ''
           if (typeof row.checkCycleMon !== 'number') row.checkCycleMon = 12
+        })
+      })
+
+    // ---------- v3：拆两边归属（班组 / 技术组），新增对账与发件箱表 ----------
+    this.version(DB_SCHEMA_VERSION)
+      .stores({
+        trees: 'id, code, species, protectLevel, ageYears, createdAt, updatedAt, owner, needsReReview',
+        surveys: 'id, treeId, [treeId+date], date, siteNote, side',
+        measures: 'id, treeId, type, state, date, operator, side',
+        supports: 'id, treeId, type, installDate, lastCheckDate',
+        reviews: 'id, treeId, date, vigor, trend, side',
+        recon: 'id, kind, treeId, status',
+        sync_outbox: 'id, side, table, status',
+      })
+      .upgrade(async (tx) => {
+        // 迁移 5：已有数据归属缺失，第一次打开先迁移到两边再启用
+        // 树体检查 / 复壮措施归班组（现场记录）；长势复评归技术组（定级）
+        await tx.table('surveys').toCollection().modify((row: Record<string, unknown>) => {
+          if (row.side !== 'team' && row.side !== 'tech') row.side = 'team'
+          row.revision = ROW_REVISION
+        })
+        await tx.table('measures').toCollection().modify((row: Record<string, unknown>) => {
+          if (row.side !== 'team' && row.side !== 'tech') row.side = 'team'
+          row.revision = ROW_REVISION
+        })
+        await tx.table('reviews').toCollection().modify((row: Record<string, unknown>) => {
+          if (row.side !== 'team' && row.side !== 'tech') row.side = 'tech'
+          row.revision = ROW_REVISION
+        })
+        // 迁移 6：加固件按字段拆分归属（检查周期归技术组、现场检查日期归班组），并补齐缺省值
+        await tx.table('supports').toCollection().modify((row: Record<string, unknown>) => {
+          if (typeof row.lastCheckDate !== 'string') row.lastCheckDate = ''
+          if (typeof row.checkCycleMon !== 'number') row.checkCycleMon = 12
+          row.revision = ROW_REVISION
+        })
+        // 迁移 7：古树补齐「待技术组复评」标记
+        await tx.table('trees').toCollection().modify((row: Record<string, unknown>) => {
+          if (typeof row.needsReReview !== 'boolean') row.needsReReview = false
+          row.revision = ROW_REVISION
         })
       })
   }
@@ -240,6 +285,21 @@ export async function removeReview(id: string): Promise<void> {
   await db.reviews.delete(id)
 }
 
+/* -------------------------- 对账待裁定 / 发件箱 -------------------------- */
+
+export async function listRecon(): Promise<ReconItem[]> {
+  const rows = await db.recon.toArray()
+  return rows.sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'pending' ? -1 : 1
+    return b.createdAt.localeCompare(a.createdAt)
+  })
+}
+
+export async function listOutbox(): Promise<OutboxItem[]> {
+  const rows = await db.sync_outbox.toArray()
+  return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
 /* ---------------------------- 整库快照 ---------------------------- */
 
 export interface DatabaseSnapshot {
@@ -251,47 +311,64 @@ export interface DatabaseSnapshot {
   measures: Measure[]
   supports: Support[]
   reviews: Review[]
+  recon: ReconItem[]
 }
 
 /** 导出整库快照 */
 export async function exportSnapshot(): Promise<DatabaseSnapshot> {
-  const [trees, surveys, measures, supports, reviews] = await Promise.all([
+  const [trees, surveys, measures, supports, reviews, recon] = await Promise.all([
     db.trees.toArray(),
     db.surveys.toArray(),
     db.measures.toArray(),
     db.supports.toArray(),
     db.reviews.toArray(),
+    db.recon.toArray(),
   ])
-  return { name: DB_NAME, schemaVersion: DB_SCHEMA_VERSION, exportedAt: nowIso(), trees, surveys, measures, supports, reviews }
+  return {
+    name: DB_NAME,
+    schemaVersion: DB_SCHEMA_VERSION,
+    exportedAt: nowIso(),
+    trees,
+    surveys,
+    measures,
+    supports,
+    reviews,
+    recon,
+  }
 }
 
-/** 用快照覆盖整库（导入存档） */
+/** 用快照覆盖整库（导入存档）；发件箱为本地瞬时状态，不随存档迁移 */
 export async function importSnapshot(snapshot: DatabaseSnapshot): Promise<void> {
-  await db.transaction('rw', db.trees, db.surveys, db.measures, db.supports, db.reviews, async () => {
+  await db.transaction('rw', [db.trees, db.surveys, db.measures, db.supports, db.reviews, db.recon, db.sync_outbox], async () => {
     await Promise.all([
       db.trees.clear(),
       db.surveys.clear(),
       db.measures.clear(),
       db.supports.clear(),
       db.reviews.clear(),
+      db.recon.clear(),
+      db.sync_outbox.clear(),
     ])
     await db.trees.bulkPut(snapshot.trees.map((row) => ({ ...row, revision: ROW_REVISION })))
     await db.surveys.bulkPut(snapshot.surveys.map((row) => ({ ...row, revision: ROW_REVISION })))
     await db.measures.bulkPut(snapshot.measures.map((row) => ({ ...row, revision: ROW_REVISION })))
     await db.supports.bulkPut(snapshot.supports.map((row) => ({ ...row, revision: ROW_REVISION })))
     await db.reviews.bulkPut(snapshot.reviews.map((row) => ({ ...row, revision: ROW_REVISION })))
+    await db.recon.bulkPut((snapshot.recon ?? []).map((row) => ({ ...row })))
   })
 }
 
 /** 清空全部数据并重新灌入演示数据 */
 export async function resetDatabase(): Promise<void> {
-  await db.transaction('rw', db.trees, db.surveys, db.measures, db.supports, db.reviews, async () => {
+  await db.transaction('rw', [db.trees, db.surveys, db.measures, db.supports, db.reviews, db.recon, db.sync_outbox], async () => {
     await Promise.all([
       db.trees.clear(),
       db.surveys.clear(),
       db.measures.clear(),
       db.supports.clear(),
       db.reviews.clear(),
+      db.recon.clear(),
+      db.sync_outbox.clear(),
     ])
   })
   await seedDatabase()

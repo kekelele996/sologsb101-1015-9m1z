@@ -12,6 +12,7 @@ import type { Measure } from '../types/measure'
 import type { Support } from '../types/support'
 import type { Review, Trend, Vigor } from '../types/review'
 import { VIGOR_NEED_FOLLOW_UP } from '../types/review'
+import type { Side } from '../types/side'
 import {
   DB_SCHEMA_VERSION,
   ROW_REVISION,
@@ -65,6 +66,7 @@ export interface TreeStat {
 }
 
 const CURRENT_TREE_KEY = 'gbheritagetree:currentTreeId'
+const CURRENT_ROLE_KEY = 'gbheritagetree:currentRole'
 
 function readCurrentTreeId(): string | null {
   try {
@@ -78,6 +80,23 @@ function readCurrentTreeId(): string | null {
 function writeCurrentTreeId(id: string | null): void {
   try {
     window.localStorage.setItem(CURRENT_TREE_KEY, id ?? '')
+  } catch {
+    /* 隐私模式下写入失败时静默降级 */
+  }
+}
+
+function readCurrentRole(): Side {
+  try {
+    const raw = window.localStorage.getItem(CURRENT_ROLE_KEY)
+    return raw === 'tech' ? 'tech' : 'team'
+  } catch {
+    return 'team'
+  }
+}
+
+function writeCurrentRole(role: Side): void {
+  try {
+    window.localStorage.setItem(CURRENT_ROLE_KEY, role)
   } catch {
     /* 隐私模式下写入失败时静默降级 */
   }
@@ -114,8 +133,13 @@ export const useTreeStore = defineStore('tree', () => {
   const ready = ref(false)
   const error = ref('')
   const currentTreeId = ref<string | null>(readCurrentTreeId())
+  /** 当前操作角色：班组（现场侧）/ 技术组（定级侧），决定可写字段范围 */
+  const currentRole = ref<Side>(readCurrentRole())
   const counts = ref<Record<string, number>>({})
   const filters = reactive<TreeFilters>({ keyword: '', protectLevel: 'all', species: 'all' })
+
+  const isTeam = computed<boolean>(() => currentRole.value === 'team')
+  const isTech = computed<boolean>(() => currentRole.value === 'tech')
 
   const speciesOptions = computed<string[]>(() => {
     const set = new Set(trees.value.map((tree) => tree.species))
@@ -244,6 +268,11 @@ export const useTreeStore = defineStore('tree', () => {
     writeCurrentTreeId(treeId)
   }
 
+  function setRole(role: Side): void {
+    currentRole.value = role
+    writeCurrentRole(role)
+  }
+
   function setFilters(patch: Partial<TreeFilters>): void {
     Object.assign(filters, patch)
   }
@@ -265,6 +294,7 @@ export const useTreeStore = defineStore('tree', () => {
       location: draft.location.trim(),
       owner: draft.owner.trim(),
       lastMeasureDate: '',
+      needsReReview: false,
       createdAt: stamp,
       updatedAt: stamp,
       revision: ROW_REVISION,
@@ -311,6 +341,9 @@ export const useTreeStore = defineStore('tree', () => {
     counts,
     filters,
     currentTreeId,
+    currentRole,
+    isTeam,
+    isTech,
     currentTree,
     speciesOptions,
     stats,
@@ -319,6 +352,7 @@ export const useTreeStore = defineStore('tree', () => {
     statOf,
     loadAll,
     selectTree,
+    setRole,
     setFilters,
     resetFilters,
     createTree,

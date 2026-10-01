@@ -9,13 +9,21 @@ import { Coin, Files, FirstAidKit, Histogram, OfficeBuilding } from '@element-pl
 import { useTreeStore } from '@/stores/treeStore'
 import { useMeasureStore } from '@/stores/measureStore'
 import { useReviewStore } from '@/stores/reviewStore'
+import { useReconStore } from '@/stores/reconStore'
 import { ROUTES } from '@/router'
+import { SIDE_LABEL, type Side } from '@/types/side'
 
 const route = useRoute()
 const router = useRouter()
 const treeStore = useTreeStore()
 const measureStore = useMeasureStore()
 const reviewStore = useReviewStore()
+const reconStore = useReconStore()
+
+const roleOptions = computed<{ value: Side; label: string }[]>(() => [
+  { value: 'team', label: SIDE_LABEL.team },
+  { value: 'tech', label: SIDE_LABEL.tech },
+])
 
 const navItems = computed(() => {
   const currentTreeId = treeStore.currentTreeId
@@ -48,6 +56,7 @@ onMounted(() => {
   void treeStore.loadAll()
   void measureStore.init()
   void reviewStore.init()
+  void reconStore.init()
 })
 
 function go(path: string): void {
@@ -81,10 +90,26 @@ function go(path: string): void {
         </button>
       </nav>
       <div class="app-header__meta">
+        <el-radio-group
+          :model-value="treeStore.currentRole"
+          size="small"
+          class="app-role"
+          @update:model-value="(value: Side) => treeStore.setRole(value)"
+        >
+          <el-radio-button v-for="opt in roleOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}视角
+          </el-radio-button>
+        </el-radio-group>
         <el-tag v-if="treeStore.currentTree" type="success" effect="dark">
           当前古树：{{ treeStore.currentTree.code }} {{ treeStore.currentTree.species }}
         </el-tag>
         <el-tag v-else type="info">未选择古树</el-tag>
+        <el-tag v-if="reconStore.pendingRecon.length > 0" type="warning" effect="dark">
+          对账待裁定 {{ reconStore.pendingRecon.length }}
+        </el-tag>
+        <el-tag v-if="reconStore.failedOutbox.length > 0" type="danger" effect="dark">
+          班组同步失败 {{ reconStore.failedOutbox.length }}
+        </el-tag>
         <el-tag v-if="overdueCount > 0" type="danger" effect="dark">加固件超期 {{ overdueCount }} 件</el-tag>
       </div>
     </header>
@@ -199,6 +224,10 @@ function go(path: string): void {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.app-role {
+  margin-right: 4px;
 }
 
 .app-main {

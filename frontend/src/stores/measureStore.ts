@@ -6,6 +6,7 @@ import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Measure, MeasureDraft, MeasureState, MeasureType } from '../types/measure'
 import {
+  ROW_REVISION,
   batchSetMeasureState,
   db,
   initDatabase,
@@ -88,6 +89,7 @@ export const useMeasureStore = defineStore('measure', () => {
     const row: Measure = {
       id: uuid('measure'),
       treeId: draft.treeId,
+      side: 'team',
       type: draft.type,
       date: draft.date,
       material: draft.material.trim(),
@@ -95,7 +97,7 @@ export const useMeasureStore = defineStore('measure', () => {
       state: draft.state,
       createdAt: stamp,
       updatedAt: stamp,
-      revision: 2,
+      revision: ROW_REVISION,
     }
     await putMeasure(row)
     revision.value += 1

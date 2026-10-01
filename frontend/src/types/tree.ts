@@ -27,6 +27,8 @@ export interface Tree {
   owner: string
   /** 最近一次复壮措施完成日期（措施完成时回写） */
   lastMeasureDate: string
+  /** 班组现场判定危险、与技术组复评定级不一致时，待技术组重新复评（对账裁定采用班组现场后置位） */
+  needsReReview: boolean
   createdAt: string
   updatedAt: string
   /** 数据行结构修订号，便于后续按行迁移 */

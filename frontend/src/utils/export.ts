@@ -66,7 +66,7 @@ export function parseSnapshot(text: string): SnapshotParseResult {
       snapshot: null,
     }
   }
-  const collections: Array<keyof DatabaseSnapshot> = ['trees', 'surveys', 'measures', 'supports', 'reviews']
+  const collections: Array<keyof DatabaseSnapshot> = ['trees', 'surveys', 'measures', 'supports', 'reviews', 'recon']
   for (const key of collections) {
     if (!Array.isArray(data[key])) {
       return { ok: false, message: `存档缺少 ${String(key)} 数组。`, snapshot: null }

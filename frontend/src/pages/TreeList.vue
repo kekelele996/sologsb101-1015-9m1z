@@ -11,6 +11,7 @@ import FilterBar from '@/components/common/FilterBar.vue'
 import EmptyPanel from '@/components/common/EmptyPanel.vue'
 import StatBadge from '@/components/common/StatBadge.vue'
 import VigorTag from '@/components/common/VigorTag.vue'
+import ReconPanel from '@/components/common/ReconPanel.vue'
 import { useTreeStore } from '@/stores/treeStore'
 import {
   PROTECT_LEVEL_OPTIONS,
@@ -153,6 +154,8 @@ function handleFilterChange(key: string, value: string): void {
       <StatBadge label="筛选结果" :value="rows.length" suffix="株" tone="info" icon="PieChart" size="small" />
     </div>
 
+    <ReconPanel />
+
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
@@ -198,6 +201,7 @@ function handleFilterChange(key: string, value: string): void {
             <div class="cell-stack">
               <el-link type="primary" @click.stop="goSurveys(row)">{{ row.code }}</el-link>
               <span class="cell-sub">{{ row.species }} · 约 {{ row.ageYears }} 年</span>
+              <el-tag v-if="row.needsReReview" type="danger" size="small" effect="dark">待技术组复评</el-tag>
             </div>
           </template>
         </el-table-column>

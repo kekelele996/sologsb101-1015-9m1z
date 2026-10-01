@@ -12,14 +12,15 @@ import StatBadge from '@/components/common/StatBadge.vue'
 import VigorTag from '@/components/common/VigorTag.vue'
 import { useIdbTable } from '@/hooks/useIdbTable'
 import { useTreeStore } from '@/stores/treeStore'
-import { db, markSupportChecked } from '@/utils/db'
+import { db } from '@/utils/db'
+import { applyTeamPatch, applyTechPatch } from '@/utils/sync'
 import { SUPPORT_TYPE_OPTIONS, type Support, type SupportDraft, type SupportType } from '@/types/support'
 import { isSupportOverdue, nextCheckDate, overdueDays } from '@/utils/dimension'
 import { today } from '@/utils/id'
 
 const treeStore = useTreeStore()
 
-const { rows, loading, create, update, remove } = useIdbTable<Support>(db.supports, { sortByUpdatedAt: false })
+const { rows, loading, create, remove } = useIdbTable<Support>(db.supports, { sortByUpdatedAt: false })
 
 const keyword = ref('')
 const treeFilter = ref('all')
@@ -29,6 +30,8 @@ const overdueOnly = ref(false)
 const dialogVisible = ref(false)
 const submitting = ref(false)
 const editingId = ref<string | null>(null)
+/** 打开编辑时记录的 updatedAt，用于班组侧冲突检测（技术组在此之后改过则同步失败） */
+const editingBaseUpdatedAt = ref('')
 const formRef = ref<FormInstance>()
 
 const form = reactive<SupportDraft>({
@@ -97,6 +100,7 @@ function openCreate(): void {
 
 function openEdit(row: Support): void {
   editingId.value = row.id
+  editingBaseUpdatedAt.value = row.updatedAt
   Object.assign(form, {
     treeId: row.treeId,
     type: row.type,
@@ -116,9 +120,23 @@ async function handleSubmit(): Promise<void> {
     if (editingId.value === null) {
       await create({ ...form }, 'support')
       ElMessage.success('加固件已登记')
+    } else if (treeStore.isTeam) {
+      // 班组侧：只写现场检查日期；若技术组在此之后改过周期，则同步失败挂入发件箱，按本侧重试
+      const result = await applyTeamPatch(
+        'supports',
+        editingId.value,
+        { lastCheckDate: form.lastCheckDate },
+        editingBaseUpdatedAt.value
+      )
+      if (result.conflict) {
+        ElMessage.warning('技术组已更新该加固件，本次班组同步失败，已挂入发件箱，可「按本侧重试」（不会退回技术组已定周期）')
+      } else {
+        ElMessage.success('现场检查日期已登记')
+      }
     } else {
-      await update(editingId.value, { ...form })
-      ElMessage.success('加固件已更新')
+      // 技术组侧：只写检查周期，班组已登记的现场检查日期不被覆盖
+      await applyTechPatch('supports', editingId.value, { checkCycleMon: form.checkCycleMon })
+      ElMessage.success('检查周期已设定，班组现场记录保留')
     }
     dialogVisible.value = false
   } catch (error) {
@@ -143,7 +161,12 @@ async function handleDelete(row: Support): Promise<void> {
 }
 
 async function handleMarkChecked(row: Support): Promise<void> {
-  await markSupportChecked(row.id, today())
+  // 班组侧登记本次检查：只写现场检查日期；若技术组在此之后改过周期，则同步失败挂入发件箱
+  const result = await applyTeamPatch('supports', row.id, { lastCheckDate: today() }, row.updatedAt)
+  if (result.conflict) {
+    ElMessage.warning('技术组已更新该加固件，本次班组同步失败，已挂入发件箱，可「按本侧重试」')
+    return
+  }
   ElMessage.success(`已登记 ${treeLabel.value[row.treeId] ?? '该古树'} 的 ${row.type} 本次检查`)
 }
 
@@ -290,6 +313,7 @@ function handleFilterChange(key: string, value: string): void {
               link
               :type="isSupportOverdue(row.lastCheckDate, row.checkCycleMon) ? 'danger' : 'primary'"
               size="small"
+              :disabled="treeStore.isTech"
               @click="handleMarkChecked(row)"
             >
               登记本次检查
@@ -330,12 +354,25 @@ function handleFilterChange(key: string, value: string): void {
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="检查周期（月）" prop="checkCycleMon">
-              <el-input-number v-model="form.checkCycleMon" :min="1" :max="120" :step="1" style="width: 100%" />
+              <el-input-number
+                v-model="form.checkCycleMon"
+                :min="1"
+                :max="120"
+                :step="1"
+                style="width: 100%"
+                :disabled="treeStore.isTeam"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="最近检查日期">
-              <el-date-picker v-model="form.lastCheckDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+              <el-date-picker
+                v-model="form.lastCheckDate"
+                type="date"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+                :disabled="treeStore.isTech"
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -344,7 +381,14 @@ function handleFilterChange(key: string, value: string): void {
           show-icon
           :closable="false"
           :title="`下次检查日期：${nextCheckDate(form.lastCheckDate, form.checkCycleMon) || '请先填写最近检查日期'}`"
-          description="超过下次检查日期仍未登记检查的加固件，会在列表中自动高亮并出现在顶部提醒中。"
+          description="检查周期由技术组设定，现场检查日期由班组登记；两边各写各的，不互相覆盖。"
+        />
+        <el-alert
+          v-if="editingId !== null"
+          :type="treeStore.isTeam ? 'success' : 'warning'"
+          show-icon
+          :closable="false"
+          :title="treeStore.isTeam ? '班组侧：仅登记现场检查日期，检查周期由技术组设定' : '技术组侧：仅设定检查周期，班组已登记的现场检查日期保留'"
         />
       </el-form>
       <template #footer>

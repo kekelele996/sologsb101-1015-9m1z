@@ -1,7 +1,9 @@
 /**
  * 复壮措施（Measure）
  * 换土、施肥、透气、树洞修补、病虫害防治等，按实施状态跟踪。
+ * 归属班组（现场侧）：技术组只定周期与复评，不改措施台账。
  */
+import type { Side } from './side'
 
 /** 措施类型 */
 export type MeasureType = '换土' | '施肥' | '透气' | '树洞修补' | '病虫害防治'
@@ -16,6 +18,8 @@ export interface Measure {
   id: string
   /** 所属古树 */
   treeId: string
+  /** 记录归属方：班组现场记录 */
+  side: Side
   /** 措施类型 */
   type: MeasureType
   /** 实施日期 YYYY-MM-DD */

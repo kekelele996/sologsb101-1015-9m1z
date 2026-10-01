@@ -1,7 +1,9 @@
 /**
  * 树体检查（Survey）
  * 每次检查记录树高、胸径、冠幅、倾斜度、空洞数与立地状况。
+ * 归属班组（现场侧）：长势复评定级不由检查改写。
  */
+import type { Side } from './side'
 
 /** 立地状况：铺装 / 裸土 / 积水 */
 export type SiteNote = '铺装' | '裸土' | '积水'
@@ -12,6 +14,8 @@ export interface Survey {
   id: string
   /** 所属古树 */
   treeId: string
+  /** 记录归属方：班组现场记录 */
+  side: Side
   /** 检查日期 YYYY-MM-DD */
   date: string
   /** 树高（米） */

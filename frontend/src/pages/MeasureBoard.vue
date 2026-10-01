@@ -190,11 +190,20 @@ function handleFilterChange(key: string, value: string): void {
       <StatBadge label="筛选结果" :value="filtered.length" suffix="项" tone="info" icon="TrendCharts" size="small" />
     </div>
 
+    <el-alert
+      v-if="treeStore.isTech"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="mb-14"
+      title="当前为技术组视角：复壮措施由班组登记，技术组只定检查周期与长势复评，不改动措施台账。"
+    />
+
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
           <span class="card-header__title">复壮措施台账</span>
-          <el-button type="primary" @click="openCreate" :disabled="treeStore.trees.length === 0">
+          <el-button type="primary" :disabled="treeStore.isTech || treeStore.trees.length === 0" @click="openCreate">
             <el-icon><Plus /></el-icon>
             <span>新增复壮措施</span>
           </el-button>
@@ -232,6 +241,7 @@ function handleFilterChange(key: string, value: string): void {
         <el-select
           :model-value="measureStore.stateDraft"
           style="width: 130px"
+          :disabled="treeStore.isTech"
           @update:model-value="(value: string) => measureStore.setStateDraft(value as MeasureState)"
         >
           <el-option v-for="item in MEASURE_STATE_OPTIONS" :key="item" :value="item" :label="item" />
@@ -239,12 +249,12 @@ function handleFilterChange(key: string, value: string): void {
         <el-button
           type="primary"
           plain
-          :disabled="measureStore.selectedIds.length === 0"
+          :disabled="treeStore.isTech || measureStore.selectedIds.length === 0"
           @click="handleBatchState"
         >
           批量调整实施状态
         </el-button>
-        <el-button :disabled="measureStore.selectedIds.length === 0" @click="measureStore.setSelectedIds([])">
+        <el-button :disabled="treeStore.isTech || measureStore.selectedIds.length === 0" @click="measureStore.setSelectedIds([])">
           取消选择
         </el-button>
         <el-tag v-if="measureStore.lastMessage" type="success" effect="plain">{{ measureStore.lastMessage }}</el-tag>
@@ -330,15 +340,16 @@ function handleFilterChange(key: string, value: string): void {
         </el-table-column>
         <el-table-column label="草稿" width="150">
           <template #default="{ row }">
-            <el-button v-if="measureStore.hasDraft(row.id)" size="small" type="primary" @click="measureStore.saveDraft(row.id)">
+            <el-button v-if="measureStore.hasDraft(row.id)" size="small" type="primary" :disabled="treeStore.isTech" @click="measureStore.saveDraft(row.id)">
               保存
             </el-button>
-            <el-button v-if="measureStore.hasDraft(row.id)" size="small" @click="measureStore.clearDraft(row.id)">
+            <el-button v-if="measureStore.hasDraft(row.id)" size="small" :disabled="treeStore.isTech" @click="measureStore.clearDraft(row.id)">
               放弃
             </el-button>
             <el-button
               v-else
               size="small"
+              :disabled="treeStore.isTech"
               @click="
                 measureStore.setDraft(row.id, {
                   date: row.date,
@@ -354,11 +365,11 @@ function handleFilterChange(key: string, value: string): void {
         </el-table-column>
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" :disabled="row.state === '已完成'" @click="handleAdvance(row)">
+            <el-button link type="primary" size="small" :disabled="treeStore.isTech || row.state === '已完成'" @click="handleAdvance(row)">
               推进状态
             </el-button>
-            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button link type="primary" size="small" :disabled="treeStore.isTech" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="small" :disabled="treeStore.isTech" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

@@ -22,7 +22,10 @@ const treeStore = useTreeStore()
 
 const treeId = computed<string>(() => String(route.params.id ?? ''))
 const tree = computed(() => treeStore.trees.find((item) => item.id === treeId.value) ?? null)
-const { rows, loading, create, update, remove } = useIdbTable<Survey>(db.surveys, { sortByUpdatedAt: false })
+const { rows, loading, create, update, remove } = useIdbTable<Survey>(db.surveys, {
+  sortByUpdatedAt: false,
+  side: 'team',
+})
 const { items } = useTreeHistory(treeId)
 
 const dialogVisible = ref(false)
@@ -194,6 +197,14 @@ async function handleDelete(row: Survey): Promise<void> {
     </EmptyPanel>
 
     <template v-else>
+      <el-alert
+        v-if="treeStore.isTech"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="mb-14"
+        title="当前为技术组视角：树体检查由班组登记，技术组只定检查周期与长势复评，不改写现场记录。"
+      />
       <div class="stat-row">
         <StatBadge label="检查次数" :value="surveys.length" suffix="次" tone="primary" icon="Histogram" />
         <StatBadge
@@ -260,7 +271,7 @@ async function handleDelete(row: Survey): Promise<void> {
             <template #header>
               <div class="card-header">
                 <span class="card-header__title">树体与立地检查记录</span>
-                <el-button type="primary" @click="openCreate">
+                <el-button type="primary" :disabled="treeStore.isTech" @click="openCreate">
                   <el-icon><Plus /></el-icon>
                   <span>新增检查</span>
                 </el-button>
@@ -321,8 +332,8 @@ async function handleDelete(row: Survey): Promise<void> {
               </el-table-column>
               <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-                  <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+                  <el-button link type="primary" size="small" :disabled="treeStore.isTech" @click="openEdit(row)">编辑</el-button>
+                  <el-button link type="danger" size="small" :disabled="treeStore.isTech" @click="handleDelete(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>

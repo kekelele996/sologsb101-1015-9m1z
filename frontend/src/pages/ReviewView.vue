@@ -256,6 +256,15 @@ function handleFilterChange(key: string, value: string): void {
       description="请到复评列表中补充后续措施（换土、透气、树洞修补、加固等），否则无法通过复评校验。"
     />
 
+    <el-alert
+      v-if="treeStore.isTeam"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="mb-14"
+      title="当前为班组视角：长势复评由技术组定级，班组新做的检查不改写已定级。"
+    />
+
     <el-row :gutter="14">
       <el-col :xs="24" :lg="17">
         <el-card shadow="never">
@@ -283,7 +292,7 @@ function handleFilterChange(key: string, value: string): void {
                   </el-button>
                 </el-upload>
                 <el-button type="danger" plain @click="handleReset">重置演示数据</el-button>
-                <el-button type="primary" @click="openCreate" :disabled="treeStore.trees.length === 0">
+                <el-button type="primary" @click="openCreate" :disabled="treeStore.isTeam || treeStore.trees.length === 0">
                   <el-icon><Plus /></el-icon>
                   <span>新增复评</span>
                 </el-button>
@@ -366,8 +375,8 @@ function handleFilterChange(key: string, value: string): void {
             </el-table-column>
             <el-table-column label="操作" width="140" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click.stop="openEdit(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click.stop="handleDelete(row)">删除</el-button>
+                <el-button link type="primary" size="small" :disabled="treeStore.isTeam" @click.stop="openEdit(row)">编辑</el-button>
+                <el-button link type="danger" size="small" :disabled="treeStore.isTeam" @click.stop="handleDelete(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
